@@ -287,6 +287,66 @@ function lintWorkspace () {
 	});
 }
 
+// Configure embedded Markdown for a non-Markdown document, lint via command, verify and fix
+function embeddedMarkdown () {
+	return testWrapper((resolve, reject, disposables) => {
+		const fileUri = vscode.Uri.file(path.join(__dirname, "embedded-markdown-test.ex"));
+		const configuration = vscode.workspace.getConfiguration("markdownlint");
+		const pattern = String.raw`^[ \t]*@(?:moduledoc|doc|typedoc)[ \t]+~?[a-zA-Z]?[ \t]*(?:"""|''')[ \t]*\r?\n(?<markdown>[\s\S]*?)\r?\n[ \t]*(?:"""|''')[ \t]*$`;
+		let validated = false;
+		disposables.push(
+			vscode.languages.onDidChangeDiagnostics((diagnosticChangeEvent) => {
+				// eslint-disable-next-line consistent-return
+				callbackWrapper(reject, () => {
+					const diagnostics = getDiagnostics(diagnosticChangeEvent, "/embedded-markdown-test.ex");
+					if (!validated) {
+						// @ts-ignore
+						const md019 = diagnostics.find((diagnostic) => (diagnostic.code?.value === "MD019"));
+						if (md019) {
+							assert.ok(md019.range.start.isEqual(new vscode.Position(2, 4)));
+							validated = true;
+							return vscode.commands.executeCommand("markdownlint.fixAll")
+								.then(() => {
+									const document = vscode.workspace.textDocuments.find(
+										(textDocument) => (textDocument.uri.fsPath === fileUri.fsPath)
+									);
+									const text = document?.getText() || "";
+									assert.ok(text.includes("  # Hello"));
+									assert.ok(!text.includes("  #  Hello"));
+								})
+								.then(() => configuration.update(
+									"embeddedMarkdown",
+									undefined,
+									vscode.ConfigurationTarget.Workspace
+								))
+								.then(() => vscode.workspace.fs.delete(fileUri, { "recursive": true }))
+								.then(resolve, reject);
+						}
+					}
+				});
+			})
+		);
+		vscode.workspace.fs.delete(fileUri, { "recursive": true }).then(
+			() => configuration.update(
+				"embeddedMarkdown",
+				{ "elixir": [ pattern ] },
+				vscode.ConfigurationTarget.Workspace
+			)
+		).then(
+			() => vscode.workspace.fs.writeFile(
+				fileUri,
+				Buffer.from("defmodule MyApp do\n  @doc \"\"\"\n  #  Hello\n\n  body\n  \"\"\"\nend\n", "utf8")
+			)
+		).then(
+			() => vscode.window.showTextDocument(fileUri)
+		).then(
+			(document) => vscode.languages.setTextDocumentLanguage(document, "elixir")
+		).then(
+			() => vscode.commands.executeCommand("markdownlint.lintEmbeddedMarkdown")
+		).then(noop, reject);
+	});
+}
+
 const tests = [
 	openLintEditVerifyFixAll,
 	openLintEditCloseClean,
@@ -296,6 +356,7 @@ if (vscode.workspace.workspaceFolders) {
 	tests.push(
 		openEditDiffRevert,
 		dynamicWorkspaceSettingsChange,
+		embeddedMarkdown,
 		// Run this last because its diagnostics persist after test completion
 		lintWorkspace
 	);
