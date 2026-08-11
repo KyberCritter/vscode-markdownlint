@@ -374,9 +374,7 @@
 					"default": {},
 					"additionalProperties": {
 						"type": "array",
-						"items": {
-							"type": "string"
-						}
+						"items": { "type": "string" }
 					}
 				},
 				"markdownlint.focusMode": {
