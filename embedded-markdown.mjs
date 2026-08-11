@@ -64,7 +64,7 @@ function getSection (text, match, pattern) {
 	}).join("\n");
 	const firstLineOffset = firstLineColumnOffset + Math.min(columnOffset, getLeadingWhitespaceCount(lines[0]));
 	return {
-		markdown: dedentedMarkdown,
+		"markdown": dedentedMarkdown,
 		lineOffset,
 		firstLineOffset,
 		columnOffset
