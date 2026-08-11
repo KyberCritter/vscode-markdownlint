@@ -290,7 +290,7 @@ function lintWorkspace () {
 // Configure embedded Markdown for a non-Markdown document, lint via command, verify and fix
 function embeddedMarkdown () {
 	return testWrapper((resolve, reject, disposables) => {
-		const fileUri = vscode.Uri.file(path.join(__dirname, "embedded-markdown-test.ex"));
+		const fileUri = vscode.Uri.file(path.join(__dirname, "embedded-markdown-test.js"));
 		const configuration = vscode.workspace.getConfiguration("markdownlint");
 		const pattern = String.raw`^[ \t]*@(?:moduledoc|doc|typedoc)[ \t]+~?[a-zA-Z]?[ \t]*(?:"""|''')[ \t]*\r?\n(?<markdown>[\s\S]*?)\r?\n[ \t]*(?:"""|''')[ \t]*$`;
 		let validated = false;
@@ -298,7 +298,7 @@ function embeddedMarkdown () {
 			vscode.languages.onDidChangeDiagnostics((diagnosticChangeEvent) => {
 				// eslint-disable-next-line consistent-return
 				callbackWrapper(reject, () => {
-					const diagnostics = getDiagnostics(diagnosticChangeEvent, "/embedded-markdown-test.ex");
+					const diagnostics = getDiagnostics(diagnosticChangeEvent, "/embedded-markdown-test.js");
 					if (!validated) {
 						// @ts-ignore
 						const md019 = diagnostics.find((diagnostic) => (diagnostic.code?.value === "MD019"));
@@ -329,7 +329,7 @@ function embeddedMarkdown () {
 		vscode.workspace.fs.delete(fileUri, { "recursive": true }).then(
 			() => configuration.update(
 				"embeddedMarkdown",
-				{ "elixir": [ pattern ] },
+				{ "javascript": [ pattern ] },
 				vscode.ConfigurationTarget.Workspace
 			)
 		).then(
@@ -339,8 +339,6 @@ function embeddedMarkdown () {
 			)
 		).then(
 			() => vscode.window.showTextDocument(fileUri)
-		).then(
-			(document) => vscode.languages.setTextDocumentLanguage(document, "elixir")
 		).then(
 			() => vscode.commands.executeCommand("markdownlint.lintEmbeddedMarkdown")
 		).then(noop, reject);
