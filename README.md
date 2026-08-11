@@ -34,6 +34,8 @@ When editing a Markdown file in VS Code with `markdownlint` installed, any lines
 
 By default, `markdownlint` will scan and report issues for files that VS Code treats as Markdown. You can see what language mode the current file has in the Status Bar at the bottom of the window and you can [change the language mode for the current file](https://code.visualstudio.com/docs/languages/overview#_change-the-language-for-the-selected-file). If you have a custom file type that VS Code should always treat as Markdown, you can [associate that file extension with the `markdown` language identifier](https://code.visualstudio.com/docs/languages/overview#_add-a-file-extension-to-a-language).
 
+`markdownlint` can also lint Markdown embedded in documents of other languages (like the documentation comments of a programming language) by configuring the [`markdownlint.embeddedMarkdown` setting](#markdownlintembeddedmarkdown) below. Because this extension is activated by Markdown documents, run the `markdownlint.lintEmbeddedMarkdown` command (see below) to lint the embedded Markdown of the current document even when the extension has not yet been activated.
+
 ## Rules
 
 * **[MD001](https://github.com/DavidAnson/markdownlint/blob/v0.41.1/doc/md001.md)** *heading-increment* - Heading levels should only increment by one level at a time
@@ -160,6 +162,12 @@ This will use [`markdownlint-cli2`](https://github.com/DavidAnson/markdownlint-c
 Results will also appear in the "Problems" panel (`Ctrl+Shift+M`/`Ctrl+Shift+M`/`⇧⌘M`) because of the [problem matcher](https://code.visualstudio.com/docs/editor/tasks#_defining-a-problem-matcher) included with the extension.
 Entries in the "Problems" panel can be clicked to open the corresponding file in the editor.
 To customize the files that are included/excluded when linting a workspace, configure the `markdownlint.lintWorkspaceGlobs` setting (see below) at workspace or user scope.
+
+### Embedded Markdown
+
+To lint the Markdown embedded in the current document (like the documentation comments of a programming language), run the `markdownlint.lintEmbeddedMarkdown` command from the Command Palette.
+This command is available even when the extension has not been activated yet (for example, before any Markdown file has been opened) because running it activates the extension on demand.
+Once [`markdownlint.embeddedMarkdown`](#markdownlintembeddedmarkdown) patterns are configured for the current document's language, embedded Markdown is linted automatically - with the usual quick-fix and formatting support - whenever the extension is active.
 
 ### Disable
 
@@ -337,6 +345,26 @@ Customizing this setting can be useful if it's common to have a mix of files ope
     "markdownlint.appliesTo": "workspaceFiles"
 }
 ```
+
+### markdownlint.embeddedMarkdown
+
+By default, only files that VS Code identifies as Markdown are linted. To also lint Markdown embedded in documents of other languages (like the documentation comments of a programming language), configure the `markdownlint.embeddedMarkdown` setting to map a language identifier to an array of regular expression patterns.
+
+Each pattern is matched against the full document text and must include a named capture group `(?<markdown>...)` that matches the Markdown content of a block. The extension lints each matched block as an independent Markdown document (so rules like `MD041`/`first-line-heading` apply per block) and maps any issues back to the corresponding locations in the document.
+
+This looks like the following in VS Code's user or workspace settings to lint the `@moduledoc`/`@doc`/`@typedoc` heredocs of Elixir files:
+
+```jsonc
+{
+    "markdownlint.embeddedMarkdown": {
+        "elixir": [
+            "^[ \\t]*@(?:moduledoc|doc|typedoc)[ \\t]+~?[a-zA-Z]?[ \\t]*(?:\"\"\"|''')[ \\t]*\\r?\\n(?<markdown>[\\s\\S]*?)\\r?\\n[ \\t]*(?:\"\"\"|''')[ \\t]*$"
+        ]
+    }
+}
+```
+
+Set the setting to an empty object `{}` (the default) to disable embedded Markdown linting.
 
 ### markdownlint.focusMode
 
