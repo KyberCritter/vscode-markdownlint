@@ -3,7 +3,7 @@
 // Tools for linting Markdown embedded in documents of other languages
 
 // Constants
-const newLineRe = /\r?\n/gu;
+const lineEndingRe = /\r?\n/gu;
 const leadingWhitespaceRe = /^[ \t]*/u;
 
 /**
@@ -12,7 +12,7 @@ const leadingWhitespaceRe = /^[ \t]*/u;
  * @returns {number} Number of newline characters.
  */
 function countNewLines (text) {
-	const matches = text.match(newLineRe);
+	const matches = text.match(lineEndingRe);
 	return matches ? matches.length : 0;
 }
 
@@ -27,7 +27,7 @@ function getLeadingWhitespaceCount (line) {
 
 /**
  * Describes an embedded Markdown section of a document.
- * @typedef {{ "markdown": string, "lineOffset": number, "firstLineColumnOffset": number, "columnOffset": number }} EmbeddedMarkdownSection
+ * @typedef {{ "markdown": string, "lineOffset": number, "firstLineOffset": number, "columnOffset": number }} EmbeddedMarkdownSection
  */
 
 /**
@@ -40,7 +40,7 @@ function getLeadingWhitespaceCount (line) {
 function getSection (text, match, pattern) {
 	const markdown = match.groups?.markdown;
 	if (typeof markdown !== "string") {
-		throw new Error(
+		throw new TypeError(
 			`The embedded Markdown pattern "${pattern}" must include a named capture group "(?<markdown>...)"`
 		);
 	}
@@ -62,11 +62,12 @@ function getSection (text, match, pattern) {
 		const count = Math.min(columnOffset, getLeadingWhitespaceCount(line));
 		return count > 0 ? line.slice(count) : line;
 	}).join("\n");
+	const firstLineOffset = firstLineColumnOffset + Math.min(columnOffset, getLeadingWhitespaceCount(lines[0]));
 	return {
-		"markdown": dedentedMarkdown,
-		"lineOffset": lineOffset,
-		"firstLineColumnOffset": firstLineColumnOffset,
-		"columnOffset": columnOffset
+		markdown: dedentedMarkdown,
+		lineOffset,
+		firstLineOffset,
+		columnOffset
 	};
 }
 
@@ -89,11 +90,11 @@ function getEmbeddedMarkdownSections (text, languageId, embeddedMarkdownConfig) 
 		for (const match of text.matchAll(regex)) {
 			const section = getSection(text, match, pattern);
 			if (section) {
-				matches.push({ "start": match.index, "section": section });
+				matches.push({ "start": match.index, section });
 			}
 		}
 	}
-	matches.sort((a, b) => a.start - b.start);
+	matches.sort((first, second) => first.start - second.start);
 	return matches.map((entry) => entry.section);
 }
 
@@ -106,14 +107,14 @@ function getEmbeddedMarkdownSections (text, languageId, embeddedMarkdownConfig) 
 function adjustResults (results, section) {
 	const {
 		lineOffset,
-		firstLineColumnOffset,
+		firstLineOffset,
 		columnOffset
 	} = section;
 	for (const result of results) {
 		const lineNumber = result.lineNumber;
 		result.lineNumber = lineNumber + lineOffset;
 		if (result.errorRange) {
-			result.errorRange[0] += (lineNumber === 1) ? firstLineColumnOffset : columnOffset;
+			result.errorRange[0] += (lineNumber === 1) ? firstLineOffset : columnOffset;
 		}
 		// @ts-ignore
 		if (result.fixInfo) {
@@ -122,7 +123,7 @@ function adjustResults (results, section) {
 			// @ts-ignore
 			result.fixInfo.lineNumber = fixLineNumber + lineOffset;
 			// @ts-ignore
-			result.fixInfo.editColumn += (fixLineNumber === 1) ? firstLineColumnOffset : columnOffset;
+			result.fixInfo.editColumn += (fixLineNumber === 1) ? firstLineOffset : columnOffset;
 		}
 	}
 	return results;
