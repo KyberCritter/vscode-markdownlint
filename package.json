@@ -93,6 +93,11 @@
 			},
 			{
 				"category": "markdownlint",
+				"command": "markdownlint.lintEmbeddedMarkdown",
+				"title": "Lint embedded Markdown in the current document"
+			},
+			{
+				"category": "markdownlint",
 				"command": "markdownlint.lintWorkspace",
 				"title": "Lint all Markdown files in the workspace"
 			},
@@ -361,6 +366,18 @@
 						"type": "string"
 					},
 					"default": []
+				},
+				"markdownlint.embeddedMarkdown": {
+					"description": "Specifies patterns for linting Markdown embedded in documents of other languages. Maps a language identifier to an array of regular expression patterns; each pattern must include a named capture group \"(?<markdown>...)\" that matches the Markdown content.",
+					"scope": "window",
+					"type": "object",
+					"default": {},
+					"additionalProperties": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					}
 				},
 				"markdownlint.focusMode": {
 					"description": "Makes it easier to focus while typing by hiding issues on or near the current line.",

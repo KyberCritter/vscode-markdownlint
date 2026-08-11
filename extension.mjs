@@ -13,6 +13,7 @@ import helpers from "markdownlint-cli2/markdownlint/helpers";
 // eslint-disable-next-line unicorn/no-keyword-prefix
 const { expandTildePath, newLineRe } = helpers;
 import parsers from "markdownlint-cli2/parsers";
+import { getEmbeddedMarkdownSections, adjustResults } from "./embedded-markdown.mjs";
 import replaceVariables from "./replace-variables.mjs";
 
 // Constants
@@ -85,6 +86,7 @@ const inTheDocument = " in the document";
 const fixLineCommandName = "markdownlint.fixLine";
 const fixAllCommandTitle = `Fix all supported ${extensionDisplayName} violations${inTheDocument}`;
 const fixAllCommandName = "markdownlint.fixAll";
+const lintEmbeddedMarkdownCommandName = "markdownlint.lintEmbeddedMarkdown";
 const lintWorkspaceCommandName = "markdownlint.lintWorkspace";
 const openConfigFileCommandName = "markdownlint.openConfigFile";
 const toggleLintingCommandName = "markdownlint.toggleLinting";
@@ -99,6 +101,7 @@ const sectionConfig = "config";
 const sectionConfigFile = "configFile";
 const sectionConfigPointer = "configPointer";
 const sectionCustomRules = "customRules";
+const sectionEmbeddedMarkdown = "embeddedMarkdown";
 const sectionFocusMode = "focusMode";
 const sectionLintWorkspaceGlobs = "lintWorkspaceGlobs";
 const sectionRun = "run";
@@ -118,6 +121,8 @@ const instanceConfiguration = {};
 const ruleNameToInformationUri = {};
 /** @type {Map<string, Array<vscode.Disposable>>} */
 const workspaceFolderUriToDisposables = new Map();
+/** @type {import("vscode").Disposable[]} */
+let documentProviderDisposables = [];
 /** @type {import("vscode").OutputChannel | null} */
 let outputChannel = null;
 let outputChannelShown = false;
@@ -473,6 +478,73 @@ function getNoImport (/** @type {string} */ scheme) {
 	return !isTrusted || !isSchemeFile || !isDesktop;
 }
 
+// Returns the language identifiers that are configured for embedded Markdown linting
+function getEmbeddedMarkdownLanguageIds () {
+	const embeddedMarkdownConfig = vscode.workspace.getConfiguration(extensionDisplayName).get(sectionEmbeddedMarkdown);
+	if (!embeddedMarkdownConfig || (typeof embeddedMarkdownConfig !== "object")) {
+		return [];
+	}
+	return Object.entries(embeddedMarkdownConfig)
+		.filter(([ , patterns ]) => Array.isArray(patterns) && (patterns.length > 0))
+		.map(([ languageId ]) => languageId);
+}
+
+// Returns whether the document's language is configured for embedded Markdown linting
+function isEmbeddedMarkdownLanguage (/** @type {import("vscode").TextDocument} */ document) {
+	if (document.languageId === markdownLanguageId) {
+		return false;
+	}
+	const configuration = vscode.workspace.getConfiguration(extensionDisplayName, document.uri);
+	const embeddedMarkdownConfig = configuration.get(sectionEmbeddedMarkdown);
+	const patterns = embeddedMarkdownConfig?.[document.languageId];
+	return Boolean(patterns && (patterns.length > 0));
+}
+
+// Lints a single embedded Markdown section and returns its results
+async function lintEmbeddedMarkdownSection (
+	/** @type {any} */ fs,
+	/** @type {string | undefined} */ directory,
+	/** @type {string[]} */ argv,
+	/** @type {"fileContents"|"nonFileContents"} */ contents,
+	/** @type {string} */ name,
+	/** @type {string} */ scheme,
+	/** @type {import("embedded-markdown.mjs").EmbeddedMarkdownSection} */ section,
+	/** @type {any} */ optionsDefault
+) {
+	/** @type {import("markdownlint-cli2").LintResult[]} */
+	const results = [];
+	/** @type {import("markdownlint-cli2").OutputFormatter} */
+	// eslint-disable-next-line func-style
+	const captureResultsFormatter = (options) => {
+		results.push(...adjustResults(options.results, section));
+	};
+	/** @type {import("markdownlint-cli2").Parameters} */
+	const parameters = {
+		fs,
+		directory,
+		argv,
+		[contents]: {
+			[name]: section.markdown
+		},
+		"noGlobs": true,
+		"noImport": getNoImport(scheme),
+		optionsDefault,
+		"optionsOverride": {
+			...getOptionsOverride(),
+			"outputFormatters": [ [ captureResultsFormatter ] ]
+		}
+	};
+	// Invoke markdownlint-cli2
+	try {
+		await markdownlintCli2(parameters);
+	} catch (error) {
+		await import("./stringify-error.mjs").then(
+			(stringifyError) => outputLine(errorExceptionPrefix + stringifyError.default(error), true)
+		);
+	}
+	return results;
+}
+
 // Wraps getting options and calling into markdownlint-cli2
 async function markdownlintWrapper (/** @type {import("vscode").TextDocument} */ document) {
 	// Prepare markdownlint-cli2 parameters
@@ -496,39 +568,78 @@ async function markdownlintWrapper (/** @type {import("vscode").TextDocument} */
 	const contents = independentDocument ?
 		"nonFileContents" :
 		"fileContents";
+	// Determine embedded Markdown sections
+	/** @type {import("embedded-markdown.mjs").EmbeddedMarkdownSection[] | null} */
+	let embeddedMarkdownSections = null;
+	if (document.languageId !== markdownLanguageId) {
+		try {
+			embeddedMarkdownSections = getEmbeddedMarkdownSections(
+				document.getText(),
+				document.languageId,
+				configuration.get(sectionEmbeddedMarkdown)
+			);
+		} catch (error) {
+			outputLine(
+				`Invalid ${extensionDisplayName}.${sectionEmbeddedMarkdown} configuration: ${/** @type {Error} */ (error).message}`,
+				true
+			);
+		}
+	}
+	// Lint each embedded Markdown section or the entire document
 	/** @type {import("markdownlint-cli2").LintResult[]} */
 	let results = [];
-	/** @type {import("markdownlint-cli2").OutputFormatter} */
-	// eslint-disable-next-line func-style
-	const captureResultsFormatter = (options) => {
-		results = options.results;
-	};
-	/** @type {import("markdownlint-cli2").Parameters} */
-	const parameters = {
-		fs,
-		directory,
-		argv,
-		[contents]: {
-			[name]: document.getText()
-		},
-		"noGlobs": true,
-		"noImport": getNoImport(scheme),
-		"optionsDefault": await getOptionsDefault(fs, configuration, workspaceFolderUri, config),
-		"optionsOverride": {
-			...getOptionsOverride(),
-			"outputFormatters": [ [ captureResultsFormatter ] ]
+	if (embeddedMarkdownSections) {
+		const optionsDefault = await getOptionsDefault(fs, configuration, workspaceFolderUri, config);
+		results = await embeddedMarkdownSections.reduce(
+			(previousPromise, section) => previousPromise.then((sectionsResults) =>
+				lintEmbeddedMarkdownSection(
+					fs,
+					directory,
+					argv,
+					contents,
+					name,
+					scheme,
+					section,
+					optionsDefault
+				).then((sectionResults) => [ ...sectionsResults, ...sectionResults ])),
+			Promise.resolve([])
+		);
+	} else {
+		/** @type {import("markdownlint-cli2").OutputFormatter} */
+		// eslint-disable-next-line func-style
+		const captureResultsFormatter = (options) => {
+			results = options.results;
+		};
+		/** @type {import("markdownlint-cli2").Parameters} */
+		const parameters = {
+			fs,
+			directory,
+			argv,
+			[contents]: {
+				[name]: document.getText()
+			},
+			"noGlobs": true,
+			"noImport": getNoImport(scheme),
+			"optionsDefault": await getOptionsDefault(fs, configuration, workspaceFolderUri, config),
+			"optionsOverride": {
+				...getOptionsOverride(),
+				"outputFormatters": [ [ captureResultsFormatter ] ]
+			}
+		};
+		// Invoke markdownlint-cli2
+		try {
+			await markdownlintCli2(parameters);
+		} catch (error) {
+			await import("./stringify-error.mjs").then(
+				(stringifyError) => outputLine(errorExceptionPrefix + stringifyError.default(error), true)
+			);
 		}
+	}
+	return {
+		results,
+		errorSeverity,
+		warningSeverity
 	};
-	// Invoke markdownlint-cli2
-	return markdownlintCli2(parameters)
-		.catch((error) => import("./stringify-error.mjs").then(
-			(stringifyError) => outputLine(errorExceptionPrefix + stringifyError.default(error), true)
-		))
-		.then(() => ({
-			results,
-			errorSeverity,
-			warningSeverity
-		}));
 	// If necessary some day to filter results by matching file name...
 	// .then(() => results.filter((result) => isSchemeUntitled || (result.fileName === path.posix.relative(directory, name))))
 }
@@ -551,6 +662,13 @@ function shouldLintDocument (/** @type {import("vscode").TextDocument} */ docume
 				.some((folder) => folder.uri.authority === document.uri.authority)
 		)
 	);
+	// Determine isEmbeddedMarkdownDocument
+	const isEmbeddedMarkdownDocument = Boolean(
+		// Non-Markdown document with supported URI scheme and configured for embedded Markdown linting
+		!isMarkdownDocument &&
+		isEmbeddedMarkdownLanguage(document) &&
+		schemeSupported.has(document.uri.scheme)
+	);
 	// Determine isDocumentInScope
 	/** @type {"allFiles"|"projectFiles"|"workspaceFiles"|"noFiles"} */
 	const appliesTo = instanceConfiguration[sectionAppliesTo];
@@ -562,7 +680,7 @@ function shouldLintDocument (/** @type {import("vscode").TextDocument} */ docume
 		}
 	}
 	// Return result
-	return isMarkdownDocument && isDocumentInScope;
+	return (isMarkdownDocument || isEmbeddedMarkdownDocument) && isDocumentInScope;
 }
 
 // Lints Markdown files in the workspace folder tree
@@ -671,6 +789,87 @@ function lint (/** @type {import("vscode").TextDocument} */ document) {
 				diagnosticCollection?.set(document.uri, diagnostics);
 			}
 		});
+}
+
+// Lints embedded Markdown in the current document
+function lintEmbeddedMarkdown () {
+	const document = vscode.window.activeTextEditor?.document;
+	if (!document) {
+		return;
+	}
+	if (document.languageId === markdownLanguageId) {
+		// Lint the Markdown document normally
+		lint(document);
+		return;
+	}
+	if (!schemeSupported.has(document.uri.scheme)) {
+		vscode.window.showErrorMessage(
+			`Unsupported URI scheme "${document.uri.scheme}" for embedded Markdown linting.`
+		);
+		return;
+	}
+	const configuration = vscode.workspace.getConfiguration(extensionDisplayName, document.uri);
+	if (!isEmbeddedMarkdownLanguage(document)) {
+		vscode.window.showInformationMessage(
+			`No embedded Markdown patterns are configured for the "${document.languageId}" language. ` +
+			`Set the ${extensionDisplayName}.${sectionEmbeddedMarkdown} setting to lint embedded Markdown.`
+		);
+		return;
+	}
+	// Validate the configuration before linting
+	try {
+		getEmbeddedMarkdownSections(
+			document.getText(),
+			document.languageId,
+			configuration.get(sectionEmbeddedMarkdown)
+		);
+	} catch (error) {
+		vscode.window.showErrorMessage(
+			`Invalid ${extensionDisplayName}.${sectionEmbeddedMarkdown} configuration: ${/** @type {Error} */ (error).message}`
+		);
+		return;
+	}
+	lint(document);
+}
+
+// Registers the document providers for Markdown and configured embedded Markdown languages
+function registerDocumentProviders () {
+	disposeDocumentProviders();
+	const documentSelector = [
+		{ "language": markdownLanguageId },
+		...getEmbeddedMarkdownLanguageIds().map((languageId) => ({ "language": languageId }))
+	];
+	const codeActionProvider = {
+		provideCodeActions
+	};
+	const codeActionProviderMetadata = {
+		"providedCodeActionKinds": [
+			codeActionKindQuickFix,
+			codeActionKindSourceFixAllExtension
+		]
+	};
+	documentProviderDisposables.push(
+		vscode.languages.registerCodeActionsProvider(
+			documentSelector,
+			codeActionProvider,
+			codeActionProviderMetadata
+		),
+		vscode.languages.registerDocumentRangeFormattingEditProvider(
+			documentSelector,
+			{
+				"provideDocumentRangeFormattingEdits": formatDocument
+			}
+		)
+	);
+}
+
+// Disposes of all document providers
+function disposeDocumentProviders () {
+	for (const disposable of documentProviderDisposables) {
+		disposable.dispose();
+	}
+	// eslint-disable-next-line unicorn/no-top-level-assignment-in-function
+	documentProviderDisposables = [];
 }
 
 // Implements CodeActionsProvider.provideCodeActions to provide information and fix rule violations
@@ -1026,6 +1225,7 @@ function didChangeConfiguration (/** @type {import("vscode").ConfigurationChange
 		outputLine("Resetting configuration cache due to setting change.");
 		getInstanceConfiguration();
 		clearRunMap();
+		registerDocumentProviders();
 		clearDiagnosticsAndLintVisibleFiles();
 	}
 }
@@ -1105,35 +1305,9 @@ export function activate (/** @type {import("vscode").ExtensionContext} */ conte
 		vscode.workspace.onDidChangeWorkspaceFolders(didChangeWorkspaceFolders)
 	);
 
-	// Register CodeActionsProvider
-	const documentSelector = { "language": markdownLanguageId };
-	const codeActionProvider = {
-		provideCodeActions
-	};
-	const codeActionProviderMetadata = {
-		"providedCodeActionKinds": [
-			codeActionKindQuickFix,
-			codeActionKindSourceFixAllExtension
-		]
-	};
-	context.subscriptions.push(
-		vscode.languages.registerCodeActionsProvider(
-			documentSelector,
-			codeActionProvider,
-			codeActionProviderMetadata
-		)
-	);
-
-	// Register DocumentRangeFormattingEditProvider
-	const documentRangeFormattingEditProvider = {
-		"provideDocumentRangeFormattingEdits": formatDocument
-	};
-	context.subscriptions.push(
-		vscode.languages.registerDocumentRangeFormattingEditProvider(
-			documentSelector,
-			documentRangeFormattingEditProvider
-		)
-	);
+	// Register CodeActionsProvider and DocumentRangeFormattingEditProvider
+	registerDocumentProviders();
+	context.subscriptions.push({ "dispose": disposeDocumentProviders });
 
 	// Register TaskProvider
 	const lintWorkspaceExecution = new vscode.CustomExecution(
@@ -1165,6 +1339,7 @@ export function activate (/** @type {import("vscode").ExtensionContext} */ conte
 	context.subscriptions.push(
 		vscode.commands.registerCommand(fixAllCommandName, fixAll),
 		vscode.commands.registerCommand(fixLineCommandName, fixLine),
+		vscode.commands.registerCommand(lintEmbeddedMarkdownCommandName, lintEmbeddedMarkdown),
 		vscode.commands.registerCommand(lintWorkspaceCommandName, lintWorkspaceViaTask),
 		vscode.commands.registerCommand(openConfigFileCommandName, openConfigFile),
 		vscode.commands.registerCommand(toggleLintingCommandName, toggleLinting)
