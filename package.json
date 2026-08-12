@@ -368,13 +368,30 @@
 					"default": []
 				},
 				"markdownlint.embeddedMarkdown": {
-					"description": "Specifies patterns for linting Markdown embedded in documents of other languages. Maps a language identifier to an array of regular expression patterns; each pattern must include a named capture group \"(?<markdown>...)\" that matches the Markdown content.",
+					"description": "Specifies patterns for linting Markdown embedded in documents of other languages. Maps a language identifier to an array of regular expression patterns; each pattern must include a named capture group \"(?<markdown>...)\" that matches the Markdown content. A pattern may be an object with a \"prefix\" regular expression that is stripped from the beginning of each line.",
 					"scope": "window",
 					"type": "object",
-					"default": {},
+					"default": {
+						"dart": [ { "pattern": "(?<markdown>(?:^[ \\t]*//[/!][^\\r\\n]*\\r?\\n?)+)", "prefix": "^[ \\t]*//[/!][ \\t]?" } ],
+						"elixir": [ "^[ \\t]*@(?:moduledoc|doc|typedoc)[ \\t]+~?[a-zA-Z]?[ \\t]*(?:\"\"\"|''')[ \\t]*\\r?\\n(?<markdown>[\\s\\S]*?)\\r?\\n[ \\t]*(?:\"\"\"|''')[ \\t]*$" ],
+						"haskell": [ "^[ \\t]*\\{-[^\\r\\n]*\\r?\\n(?<markdown>[\\s\\S]*?)\\r?\\n[ \\t]*\\-\\}[^\\r\\n]*" ],
+						"javascript": [ { "pattern": "^[ \\t]*/\\*\\*[^\\r\\n]*\\r?\\n(?<markdown>[\\s\\S]*?)\\r?\\n[ \\t]*\\*/[ \\t]*$", "prefix": "^[ \\t]*\\*[ \\t]?" }, "^[ \\t]*/\\*\\*[ \\t]*(?<markdown>[^\\r\\n]*?)[ \\t]*\\*/[ \\t]*$" ],
+						"javascriptreact": [ { "pattern": "^[ \\t]*/\\*\\*[^\\r\\n]*\\r?\\n(?<markdown>[\\s\\S]*?)\\r?\\n[ \\t]*\\*/[ \\t]*$", "prefix": "^[ \\t]*\\*[ \\t]?" }, "^[ \\t]*/\\*\\*[ \\t]*(?<markdown>[^\\r\\n]*?)[ \\t]*\\*/[ \\t]*$" ],
+						"julia": [ "^[ \\t]*\"\"\"(?<markdown>[\\s\\S]*?)\"\"\"" ],
+						"kotlin": [ { "pattern": "^[ \\t]*/\\*\\*[^\\r\\n]*\\r?\\n(?<markdown>[\\s\\S]*?)\\r?\\n[ \\t]*\\*/[ \\t]*$", "prefix": "^[ \\t]*\\*[ \\t]?" }, "^[ \\t]*/\\*\\*[ \\t]*(?<markdown>[^\\r\\n]*?)[ \\t]*\\*/[ \\t]*$" ],
+						"lua": [ "^[ \\t]*--\\[\\[[^\\r\\n]*\\r?\\n(?<markdown>[\\s\\S]*?)\\r?\\n[ \\t]*\\]\\][^\\r\\n]*" ],
+						"php": [ { "pattern": "^[ \\t]*/\\*\\*[^\\r\\n]*\\r?\\n(?<markdown>[\\s\\S]*?)\\r?\\n[ \\t]*\\*/[ \\t]*$", "prefix": "^[ \\t]*\\*[ \\t]?" }, "^[ \\t]*/\\*\\*[ \\t]*(?<markdown>[^\\r\\n]*?)[ \\t]*\\*/[ \\t]*$" ],
+						"python": [ "^[ \\t]*(?:(?:async[ \\t]+)?def[ \\t]+[A-Za-z_]\\w*|class[ \\t]+[A-Za-z_]\\w*)[^\\r\\n]*:[ \\t]*\\r?\\n[ \\t]*(?:\"\"\"|''')(?<markdown>[\\s\\S]*?)(?:\"\"\"|''')" ],
+						"ruby": [ "^[ \\t]*=begin[^\\r\\n]*\\r?\\n(?<markdown>[\\s\\S]*?)\\r?\\n[ \\t]*=end[^\\r\\n]*" ],
+						"rust": [ { "pattern": "(?<markdown>(?:^[ \\t]*//[/!][^\\r\\n]*\\r?\\n?)+)", "prefix": "^[ \\t]*//[/!][ \\t]?" } ],
+						"scala": [ { "pattern": "^[ \\t]*/\\*\\*[^\\r\\n]*\\r?\\n(?<markdown>[\\s\\S]*?)\\r?\\n[ \\t]*\\*/[ \\t]*$", "prefix": "^[ \\t]*\\*[ \\t]?" }, "^[ \\t]*/\\*\\*[ \\t]*(?<markdown>[^\\r\\n]*?)[ \\t]*\\*/[ \\t]*$" ],
+						"swift": [ { "pattern": "(?<markdown>(?:^[ \\t]*//[/!][^\\r\\n]*\\r?\\n?)+)", "prefix": "^[ \\t]*//[/!][ \\t]?" } ],
+						"typescript": [ { "pattern": "^[ \\t]*/\\*\\*[^\\r\\n]*\\r?\\n(?<markdown>[\\s\\S]*?)\\r?\\n[ \\t]*\\*/[ \\t]*$", "prefix": "^[ \\t]*\\*[ \\t]?" }, "^[ \\t]*/\\*\\*[ \\t]*(?<markdown>[^\\r\\n]*?)[ \\t]*\\*/[ \\t]*$" ],
+						"typescriptreact": [ { "pattern": "^[ \\t]*/\\*\\*[^\\r\\n]*\\r?\\n(?<markdown>[\\s\\S]*?)\\r?\\n[ \\t]*\\*/[ \\t]*$", "prefix": "^[ \\t]*\\*[ \\t]?" }, "^[ \\t]*/\\*\\*[ \\t]*(?<markdown>[^\\r\\n]*?)[ \\t]*\\*/[ \\t]*$" ]
+					},
 					"additionalProperties": {
 						"type": "array",
-						"items": { "type": "string" }
+						"items": { "oneOf": [ { "type": "string" }, { "type": "object", "properties": { "pattern": { "type": "string" }, "prefix": { "type": "string" } }, "required": [ "pattern" ], "additionalProperties": false } ] }
 					}
 				},
 				"markdownlint.focusMode": {

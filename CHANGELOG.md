@@ -1,6 +1,6 @@
 # Changes
 
-* 0.63.0 - Add `embeddedMarkdown` setting, `lintEmbeddedMarkdown` command
+* 0.63.0 - Add `embeddedMarkdown` setting, `lintEmbeddedMarkdown` command, default languages
 * 0.62.0 - Improved rules, add `overrides`/`configPointer`/`appliesTo`
 * 0.61.0 - Improved rules, add warnings, add `severityForError`/`Warning`
 * 0.60.0 - Improved rules
