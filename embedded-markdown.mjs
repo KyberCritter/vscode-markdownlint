@@ -26,8 +26,18 @@ function getLeadingWhitespaceCount (line) {
 }
 
 /**
+ * Returns the number of leading characters to strip from the specified line.
+ * @param {string} line Line to inspect.
+ * @param {number} columnOffset Maximum indentation to strip.
+ * @returns {number} Number of leading characters to strip.
+ */
+function getStrippedCount (line, columnOffset) {
+	return Math.min(columnOffset, getLeadingWhitespaceCount(line));
+}
+
+/**
  * Describes an embedded Markdown section of a document.
- * @typedef {{ "markdown": string, "lineOffset": number, "firstLineOffset": number, "columnOffset": number }} EmbeddedMarkdownSection
+ * @typedef {{ "markdown": string, "lineOffset": number, "columnOffsets": number[] }} EmbeddedMarkdownSection
  */
 
 /**
@@ -35,9 +45,10 @@ function getLeadingWhitespaceCount (line) {
  * @param {string} text Full document text.
  * @param {RegExpMatchArray} match Regular expression match.
  * @param {string} pattern Regular expression pattern.
+ * @param {string | undefined} prefix Regular expression for stripping a per-line prefix.
  * @returns {EmbeddedMarkdownSection | null} Embedded Markdown section or null.
  */
-function getSection (text, match, pattern) {
+function getSection (text, match, pattern, prefix) {
 	const markdown = match.groups?.markdown;
 	if (typeof markdown !== "string") {
 		throw new TypeError(
@@ -52,22 +63,41 @@ function getSection (text, match, pattern) {
 	const firstLineColumnOffset = markdownStart - (previousNewLineIndex + 1);
 	const lineOffset = countNewLines(text.slice(0, markdownStart));
 	const lines = markdown.split(/\r?\n/u);
+	const prefixRe = prefix ? new RegExp(prefix, "u") : null;
 	let columnOffset = Number.MAX_SAFE_INTEGER;
-	for (const line of lines) {
-		if (line.trim().length > 0) {
-			columnOffset = Math.min(columnOffset, getLeadingWhitespaceCount(line));
+	if (!prefixRe) {
+		const firstLineIndex = (firstLineColumnOffset > 0) ? 1 : 0;
+		for (let index = firstLineIndex; index < lines.length; index++) {
+			if (lines[index].trim().length > 0) {
+				columnOffset = Math.min(columnOffset, getLeadingWhitespaceCount(lines[index]));
+			}
 		}
 	}
-	const dedentedMarkdown = lines.map((line) => {
-		const count = Math.min(columnOffset, getLeadingWhitespaceCount(line));
-		return count > 0 ? line.slice(count) : line;
-	}).join("\n");
-	const firstLineOffset = firstLineColumnOffset + Math.min(columnOffset, getLeadingWhitespaceCount(lines[0]));
+	/** @type {number[]} */
+	const columnOffsets = [];
+	/** @type {string[]} */
+	const strippedLines = [];
+	for (const line of lines) {
+		let stripped = 0;
+		let strippedLine = line;
+		if (prefixRe) {
+			const prefixMatch = prefixRe.exec(line);
+			if (prefixMatch && (prefixMatch.index === 0)) {
+				stripped = prefixMatch[0].length;
+				strippedLine = line.slice(stripped);
+			}
+		} else {
+			stripped = getStrippedCount(line, columnOffset);
+			strippedLine = line.slice(stripped);
+		}
+		columnOffsets.push(stripped);
+		strippedLines.push(strippedLine);
+	}
+	columnOffsets[0] += firstLineColumnOffset;
 	return {
-		"markdown": dedentedMarkdown,
+		"markdown": strippedLines.join("\n"),
 		lineOffset,
-		firstLineOffset,
-		columnOffset
+		columnOffsets
 	};
 }
 
@@ -75,7 +105,7 @@ function getSection (text, match, pattern) {
  * Returns the embedded Markdown sections of a document or null when not applicable.
  * @param {string} text Full document text.
  * @param {string} languageId Document language identifier.
- * @param {Object<string, string[]> | undefined} embeddedMarkdownConfig Value of the "embeddedMarkdown" setting.
+ * @param {Object<string, Array<string | { "pattern": string, "prefix"?: string }>> | undefined} embeddedMarkdownConfig Value of the "embeddedMarkdown" setting.
  * @returns {EmbeddedMarkdownSection[] | null} Embedded Markdown sections or null.
  */
 function getEmbeddedMarkdownSections (text, languageId, embeddedMarkdownConfig) {
@@ -85,10 +115,17 @@ function getEmbeddedMarkdownSections (text, languageId, embeddedMarkdownConfig) 
 	}
 	/** @type {Array<{ "start": number, "section": EmbeddedMarkdownSection }>} */
 	const matches = [];
-	for (const pattern of patterns) {
+	for (const entry of patterns) {
+		const pattern = (typeof entry === "string") ? entry : entry?.pattern;
+		if (typeof pattern !== "string") {
+			throw new TypeError(
+				`The embedded Markdown pattern for the "${languageId}" language must be a string or an object with a "pattern" string`
+			);
+		}
+		const prefix = (typeof entry === "object") ? entry?.prefix : undefined;
 		const regex = new RegExp(pattern, "gm");
 		for (const match of text.matchAll(regex)) {
-			const section = getSection(text, match, pattern);
+			const section = getSection(text, match, pattern, prefix);
 			if (section) {
 				matches.push({ "start": match.index, section });
 			}
@@ -107,14 +144,14 @@ function getEmbeddedMarkdownSections (text, languageId, embeddedMarkdownConfig) 
 function adjustResults (results, section) {
 	const {
 		lineOffset,
-		firstLineOffset,
-		columnOffset
+		columnOffsets
 	} = section;
 	for (const result of results) {
 		const lineNumber = result.lineNumber;
 		result.lineNumber = lineNumber + lineOffset;
+		const columnOffset = columnOffsets[lineNumber - 1] ?? columnOffsets.at(-1);
 		if (result.errorRange) {
-			result.errorRange[0] += (lineNumber === 1) ? firstLineOffset : columnOffset;
+			result.errorRange[0] += columnOffset;
 		}
 		// @ts-ignore
 		if (result.fixInfo) {
@@ -122,8 +159,9 @@ function adjustResults (results, section) {
 			const fixLineNumber = result.fixInfo.lineNumber || lineNumber;
 			// @ts-ignore
 			result.fixInfo.lineNumber = fixLineNumber + lineOffset;
+			const fixColumnOffset = columnOffsets[fixLineNumber - 1] ?? columnOffsets.at(-1);
 			// @ts-ignore
-			result.fixInfo.editColumn += (fixLineNumber === 1) ? firstLineOffset : columnOffset;
+			result.fixInfo.editColumn += fixColumnOffset;
 		}
 	}
 	return results;
