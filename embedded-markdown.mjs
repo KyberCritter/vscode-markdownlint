@@ -94,8 +94,9 @@ function getSection (text, match, pattern, prefix) {
 		strippedLines.push(strippedLine);
 	}
 	columnOffsets[0] += firstLineColumnOffset;
+	const content = strippedLines.join("\n");
 	return {
-		"markdown": strippedLines.join("\n"),
+		"markdown": content.endsWith("\n") ? content : content + "\n",
 		lineOffset,
 		columnOffsets
 	};

@@ -40,8 +40,8 @@ describe("embedded-markdown", () => {
 		t.plan(1);
 		const text = "defmodule MyApp do\n  @moduledoc \"\"\"\n  # Hello\n\n  This is a paragraph.\n  \"\"\"\n  @doc \"\"\"\n  Says hello.\n  \"\"\"\nend\n";
 		const expected = [
-			{ "markdown": "# Hello\n\nThis is a paragraph.", "lineOffset": 2, "columnOffsets": [ 2, 0, 2 ] },
-			{ "markdown": "Says hello.", "lineOffset": 7, "columnOffsets": [ 2 ] }
+			{ "markdown": "# Hello\n\nThis is a paragraph.\n", "lineOffset": 2, "columnOffsets": [ 2, 0, 2 ] },
+			{ "markdown": "Says hello.\n", "lineOffset": 7, "columnOffsets": [ 2 ] }
 		];
 		const actual = getEmbeddedMarkdownSections(text, "elixir", { "elixir": [ heredocPattern ] });
 		t.assert.deepEqual(actual, expected);
@@ -51,7 +51,7 @@ describe("embedded-markdown", () => {
 		t.plan(1);
 		const text = "defmodule MyApp do\r\n  @moduledoc \"\"\"\r\n  # Hello\r\n  \"\"\"\r\nend\r\n";
 		const expected = [
-			{ "markdown": "# Hello", "lineOffset": 2, "columnOffsets": [ 2 ] }
+			{ "markdown": "# Hello\n", "lineOffset": 2, "columnOffsets": [ 2 ] }
 		];
 		const actual = getEmbeddedMarkdownSections(text, "elixir", { "elixir": [ heredocPattern ] });
 		t.assert.deepEqual(actual, expected);
@@ -62,7 +62,7 @@ describe("embedded-markdown", () => {
 		const text = "@doc \"\"\"\n  # H\n  \n  body\n  \"\"\"\n";
 		const pattern = String.raw`^@doc[ \t]*"""[ \t]*\r?\n(?<markdown>[\s\S]*?)\r?\n[ \t]*"""$`;
 		const expected = [
-			{ "markdown": "# H\n\nbody", "lineOffset": 1, "columnOffsets": [ 2, 2, 2 ] }
+			{ "markdown": "# H\n\nbody\n", "lineOffset": 1, "columnOffsets": [ 2, 2, 2 ] }
 		];
 		const actual = getEmbeddedMarkdownSections(text, "elixir", { "elixir": [ pattern ] });
 		t.assert.deepEqual(actual, expected);
@@ -73,7 +73,7 @@ describe("embedded-markdown", () => {
 		const text = "@doc \"Hello\"";
 		const pattern = String.raw`@doc[ \t]+"(?<markdown>[\s\S]*?)"`;
 		const expected = [
-			{ "markdown": "Hello", "lineOffset": 0, "columnOffsets": [ 6 ] }
+			{ "markdown": "Hello\n", "lineOffset": 0, "columnOffsets": [ 6 ] }
 		];
 		const actual = getEmbeddedMarkdownSections(text, "elixir", { "elixir": [ pattern ] });
 		t.assert.deepEqual(actual, expected);
@@ -85,9 +85,9 @@ describe("embedded-markdown", () => {
 		const docPattern = String.raw`^@doc[ \t]*"""[ \t]*\r?\n(?<markdown>[\s\S]*?)\r?\n[ \t]*"""$`;
 		const summaryPattern = String.raw`@summary[ \t]+"(?<markdown>[\s\S]*?)"`;
 		const expected = [
-			{ "markdown": "One", "lineOffset": 1, "columnOffsets": [ 0 ] },
-			{ "markdown": "Two", "lineOffset": 3, "columnOffsets": [ 10 ] },
-			{ "markdown": "Three", "lineOffset": 5, "columnOffsets": [ 0 ] }
+			{ "markdown": "One\n", "lineOffset": 1, "columnOffsets": [ 0 ] },
+			{ "markdown": "Two\n", "lineOffset": 3, "columnOffsets": [ 10 ] },
+			{ "markdown": "Three\n", "lineOffset": 5, "columnOffsets": [ 0 ] }
 		];
 		const actual = getEmbeddedMarkdownSections(text, "elixir", { "elixir": [ docPattern, summaryPattern ] });
 		t.assert.deepEqual(actual, expected);
@@ -118,7 +118,7 @@ describe("embedded-markdown", () => {
 		t.plan(1);
 		const text = "/**\n * Summary\n * details\n */\n";
 		const expected = [
-			{ "markdown": "Summary\ndetails", "lineOffset": 1, "columnOffsets": [ 3, 3 ] }
+			{ "markdown": "Summary\ndetails\n", "lineOffset": 1, "columnOffsets": [ 3, 3 ] }
 		];
 		const actual = getEmbeddedMarkdownSections(text, "javascript", { "javascript": [ { "pattern": jsdocPattern, "prefix": jsdocPrefix } ] });
 		t.assert.deepEqual(actual, expected);
@@ -128,7 +128,7 @@ describe("embedded-markdown", () => {
 		t.plan(1);
 		const text = "/** Summary */\n";
 		const expected = [
-			{ "markdown": "Summary", "lineOffset": 0, "columnOffsets": [ 4 ] }
+			{ "markdown": "Summary\n", "lineOffset": 0, "columnOffsets": [ 4 ] }
 		];
 		const actual = getEmbeddedMarkdownSections(text, "javascript", { "javascript": [ { "pattern": jsdocSinglePattern, "prefix": jsdocPrefix } ] });
 		t.assert.deepEqual(actual, expected);
@@ -140,7 +140,7 @@ describe("embedded-markdown", () => {
 		const pattern = String.raw`(?<markdown>[^\r\n]+)`;
 		const prefix = String.raw`\*[ \t]?`;
 		const expected = [
-			{ "markdown": "no star here *", "lineOffset": 0, "columnOffsets": [ 0 ] }
+			{ "markdown": "no star here *\n", "lineOffset": 0, "columnOffsets": [ 0 ] }
 		];
 		const actual = getEmbeddedMarkdownSections(text, "javascript", { "javascript": [ { pattern, prefix } ] });
 		t.assert.deepEqual(actual, expected);
@@ -237,7 +237,7 @@ describe("embedded-markdown", () => {
 
 	test("adjustResults with first-line column offset", (t) => {
 		t.plan(1);
-		const section = { "markdown": "Hello", "lineOffset": 5, "columnOffsets": [ 8 ] };
+		const section = { "markdown": "Hello\n", "lineOffset": 5, "columnOffsets": [ 8 ] };
 		const results = [
 			{ "lineNumber": 1, "errorRange": [ 2, 3 ] }
 		];
